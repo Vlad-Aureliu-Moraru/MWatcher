@@ -6,37 +6,6 @@ on:
   pull_request:
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller pillow opencv-python
-
-      - name: Build Windows executable
-        run: |
-          pyinstaller ^
-            --onefile ^
-            --windowed ^
-            --hidden-import=PIL._tkinter_finder ^
-            gui.py
-
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: movie-app-windows
-          path: dist/gui.exe
-
   build-linux:
     runs-on: ubuntu-latest
 
