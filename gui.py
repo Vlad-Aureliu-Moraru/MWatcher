@@ -6,26 +6,41 @@ import subprocess
 import reader_helper as rh
 from functools import partial
 from tkinter import filedialog
-
+import shutil
+import sys
 
 #file_path = Path("IMG_2697.mp4").absolute()
 #webbrowser.open(file_path.as_uri())
+
+
+def get_ffmpeg_path():
+    # Try bundled ffmpeg (PyInstaller)
+    if getattr(sys, 'frozen', False):
+        bundled = Path(sys._MEIPASS) / "ffmpeg"
+        if bundled.exists():
+            return str(bundled)
+
+    # Try system ffmpeg
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        return ffmpeg
+
+    return None
+
+FFMPEG_PATH = get_ffmpeg_path()
 
 filepath = rh.get_last_selected_path()
 if filepath is not None and len(filepath) > 0:
     print("Using last selected path:", filepath)
 TRACKER_FILE = "watched_videos.txt"
 
-main_color = "#D7C097"
-secondary_color = "#E7DEAF"
-third_color = "#73AF6F"
-accent_color="#007E6E"
+main_color = "#2C2C2C"       
+secondary_color = "#522546"  
+third_color = "#88304E"      
+accent_color = "#F7374F" 
 
 
 def mark_as_watched(name):
-    """
-    Add a video filename to the tracker file if not already marked.
-    """
     tracker = Path(TRACKER_FILE)
     watched = set()
     if tracker.exists():
@@ -62,9 +77,17 @@ def open_file_browser():
         return None
 
 def create_movie_display(movie_display, dirpath):
+    if not FFMPEG_PATH:
+        raise RuntimeError("ffmpeg not found")
     for widget in movie_display.winfo_children():
         widget.destroy()
 
+    THUMB_W = 160
+    PADDING = 12
+
+    cols = max(movie_display.winfo_width() // (THUMB_W + PADDING), 1)
+
+    row = col = 0
     unique_files = rh.get_unique_filenames(dirpath)
     print("Unique files:", unique_files)
 
@@ -79,7 +102,7 @@ def create_movie_display(movie_display, dirpath):
         if not thumbnail_path.exists():  
             try:
                 subprocess.run([
-                    "ffmpeg",
+                    FFMPEG_PATH,
                     "-y",  # overwrite
                     "-i", str(first_file),
                     "-ss", "00:00:01",  # seek 1 second into the video
@@ -102,12 +125,31 @@ def create_movie_display(movie_display, dirpath):
         btn_color = secondary_color
         btn = tk.Button(movie_display, image=photo,bg=btn_color,highlightthickness=0,borderwidth=0, text=name, compound="top", command=partial(display_selected_series,name,movie_display,filepath))
         btn.image = photo  
-        btn.pack(side="left", padx=5, pady=5)
+        btn.grid(
+            row=row,
+            column=col,
+            padx=PADDING,
+            pady=PADDING,
+            sticky="n"
+        )
+
+        col += 1
+        if col >= cols:
+            col = 0
+            row += 1
 
 def display_selected_series(name, movie_display, dirpath):
+    if not FFMPEG_PATH:
+        raise RuntimeError("ffmpeg not found")
     for widget in movie_display.winfo_children():
         widget.destroy()
 
+    THUMB_W = 160
+    PADDING = 12
+
+    cols = max(movie_display.winfo_width() // (THUMB_W + PADDING), 1)
+
+    row = col = 0
     matching_files = rh.get_matching_files(name, dirpath)
     print("Matching files:", matching_files)
 
@@ -115,11 +157,10 @@ def display_selected_series(name, movie_display, dirpath):
         file_path = Path(dirpath) / file
         thumbnail_path = Path("/tmp") / f"{file_path.stem}_thumb.jpg"
 
-        # Generate thumbnail with ffmpeg if it doesn't exist
         if not thumbnail_path.exists():
             try:
                 subprocess.run([
-                    "ffmpeg",
+                    FFMPEG_PATH,
                     "-y",
                     "-i", str(file_path),
                     "-ss", "00:00:01",
@@ -142,7 +183,18 @@ def display_selected_series(name, movie_display, dirpath):
         btn_color = accent_color if is_watched(file_path.name) else secondary_color
         btn = tk.Button(movie_display,borderwidth=0,highlightthickness=0,activebackground=main_color, image=photo,bg=btn_color, text=file_path.name, compound="top",command=partial(play_selected,file_path.name,dirpath))
         btn.image = photo  # prevent garbage collection
-        btn.pack(side="left", padx=5, pady=5)
+        btn.grid(
+            row=row,
+            column=col,
+            padx=PADDING,
+            pady=PADDING,
+            sticky="n"
+        )
+
+        col += 1
+        if col >= cols:
+            col = 0
+            row += 1
 
 def play_selected(name, dirpath):
     """
@@ -157,53 +209,93 @@ def play_selected(name, dirpath):
     webbrowser.open(file_path.resolve().as_uri())
     mark_as_watched(name)
 
-
 window = tk.Tk()
-window.geometry("1400x840") 
+window.geometry("1400x840")
 window.title("MWatcher")
 window.configure(bg=main_color)
 
+# ===== CONTROL PANEL =====
+control_panel = tk.Frame(window, bg=main_color, height=60)
+control_panel.pack(fill="x", side="top")
+control_panel.pack_propagate(False)  # prevent resizing to children
 
-#train_var = StringVar()  
-#k_var = IntVar(value=20)  
-#nn_norm_var = IntVar(value=1)
-#knn_k_var = IntVar(value=3)
-#algo_var = StringVar(value="NN") 
+# Button style
+def create_styled_button(parent, text, command=None):
+    btn = tk.Button(
+        parent,
+        text=text,
+        command=command,
+        bg=secondary_color,
+        fg="white",
+        activebackground=third_color,
+        activeforeground="white",
+        relief="flat",
+        borderwidth=0,
+        padx=20,
+        pady=8,
+        font=("Segoe UI", 10, "bold"),
+        cursor="hand2"
+    )
+    # Hover effect
+    btn.bind("<Enter>", lambda e: btn.config(bg=third_color))
+    btn.bind("<Leave>", lambda e: btn.config(bg=secondary_color))
+    return btn
 
-# control panel ------
-control_panel = tk.Frame(window, borderwidth=2,bg=main_color) 
-control_panel.pack(fill="x")
-control_panel.configure(height=50)
-#control_panel.place(x=20, y=20, width=1360, height=100)
+# "Choose File" button
+choose_file_btn = create_styled_button(control_panel, "Alege Fisier", command=open_file_browser)
+choose_file_btn.pack(side="left", padx=15, pady=10)
 
-chose_file_btn =tk.Button(control_panel,text="Alege Fisier",borderwidth=0,width=30,command=open_file_browser,bg=secondary_color)
-chose_file_btn.pack(side="left")
-#chose_file_btn.place(x=10,y=10)
-
-
-current_dir_label = tk.Label (control_panel,text="SELECTED",bg=main_color)
-current_dir_label.pack(side="left")
-#current_dir_label.place(x=10,y=50)
-
-
+# Current directory label
+current_dir_label = tk.Label(
+    control_panel,
+    text="SELECTED",
+    bg=main_color,
+    fg="white",
+    font=("Segoe UI", 10)
+)
+current_dir_label.pack(side="left", padx=10)
 
 #-- movie_display
     
-canvas = tk.Canvas(window, bg=secondary_color)
-scrollbar = tk.Scrollbar(window, orient=tk.VERTICAL, command=canvas.yview)
+canvas = tk.Canvas(
+    window,
+    bg=secondary_color,
+    highlightthickness=0
+)
+
+scrollbar = tk.Scrollbar(
+    window,
+    orient=tk.VERTICAL,
+    command=canvas.yview
+)
+
+canvas.configure(yscrollcommand=scrollbar.set)
+
 scrollbar.pack(side="right", fill="y")
 canvas.pack(side="left", fill="both", expand=True)
 
-# Frame inside the canvas
-movie_display = tk.Frame(canvas, bg=secondary_color, relief=tk.RAISED, borderwidth=0)
-canvas.create_window((0, 0), window=movie_display, anchor="nw")
+movie_display = tk.Frame(
+    canvas,
+    bg=secondary_color,
+    borderwidth=0
+)
 
-# Update scroll region whenever the frame changes
+canvas_window = canvas.create_window(
+    (0, 0),
+    window=movie_display,
+    anchor="nw"
+)
+
+
 def on_frame_configure(event):
     canvas.configure(scrollregion=canvas.bbox("all"))
 
-#canvas.place(x=20, y=140, width=1360, height=550)
-#scrollbar.place(x=1380, y=140, height=550)
+movie_display.bind("<Configure>", on_frame_configure)
+
+def on_canvas_configure(event):
+    canvas.itemconfig(canvas_window, width=event.width)
+
+canvas.bind("<Configure>", on_canvas_configure)
 
 
 if filepath is not None and len(filepath) > 0:
@@ -211,7 +303,7 @@ if filepath is not None and len(filepath) > 0:
     create_movie_display(movie_display,filepath)
 
 
-return_btn =tk.Button(control_panel,text="<-",width=4,bg=secondary_color,command=partial(create_movie_display,movie_display,filepath))
+return_btn = create_styled_button(control_panel,text="<-",command=partial(create_movie_display,movie_display,filepath))
 return_btn.pack(side="right")
 
 window.mainloop()
