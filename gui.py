@@ -5,6 +5,8 @@ from PIL import Image, ImageTk
 import subprocess
 import reader_helper as rh
 from functools import partial
+from tkinter import filedialog
+
 
 #file_path = Path("IMG_2697.mp4").absolute()
 #webbrowser.open(file_path.as_uri())
@@ -146,7 +148,7 @@ def play_selected(name, dirpath):
     """
     Opens the selected video file in the default browser/media player.
     """
-    file_path = Path(dirpath) / name  # join directory and filename
+    file_path = Path(dirpath) / name  
     if not file_path.exists():
         print(f"File not found: {file_path}")
         return
