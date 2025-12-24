@@ -37,7 +37,6 @@ jobs:
         run: |
           pyinstaller \
             --onefile \
-            --add-binary "/sbin/ffmpeg:." \
             --hidden-import=PIL._tkinter_finder \
             gui.py
 
