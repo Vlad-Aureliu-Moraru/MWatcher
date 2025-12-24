@@ -2,26 +2,36 @@ name: Build Movie App
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
 
 jobs:
   build-windows:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller pillow opencv-python
-      - name: Build executable
-        run: pyinstaller --onefile --windowed gui.py
-      - name: Upload artifact
+
+      - name: Build Windows executable
+        run: |
+          pyinstaller ^
+            --onefile ^
+            --windowed ^
+            --hidden-import=PIL._tkinter_finder ^
+            gui.py
+
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: movie-app-windows
@@ -29,21 +39,39 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
+
+      - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg libsm6 libxext6
+          sudo apt install -y \
+            ffmpeg \
+            libgl1 \
+            libsm6 \
+            libxext6 \
+            tk
+
+      - name: Install Python dependencies
+        run: |
           python -m pip install --upgrade pip
           pip install pyinstaller pillow opencv-python
-      - name: Build executable
-        run: pyinstaller --onefile gui.py
-      - name: Upload artifact
+
+      - name: Build Linux executable
+        run: |
+          pyinstaller \
+            --onefile \
+            --hidden-import=PIL._tkinter_finder \
+            gui.py
+
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: movie-app-linux

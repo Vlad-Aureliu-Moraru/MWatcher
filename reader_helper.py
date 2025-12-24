@@ -69,7 +69,3 @@ else:
     print("No previously selected path found")
 
 
-dirpath = "/home/thorn/Documents/+Main/SCRIPTS/MOVIE_PLAYER"
-print(get_unique_filenames(dirpath))
-matching_files = get_matching_files("Series", dirpath)
-print(matching_files)
