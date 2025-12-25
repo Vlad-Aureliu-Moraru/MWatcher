@@ -63,10 +63,4 @@ else:
     print("No previously selected path found")
 
 
-dirpath = "."
-uniques = get_unique_filenames(dirpath)
-files = get_matching_files("Series",dirpath)
-
-print(uniques)
-print(files)
 
