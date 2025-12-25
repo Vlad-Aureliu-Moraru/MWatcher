@@ -9,9 +9,117 @@ from tkinter import filedialog
 import shutil
 import sys
 
+main_color      = "#141414"
+secondary_color = "#141414"
+third_color     = "#1F1F1F"
+accent_color    = "#E50914"
+fg = "#E5E5E5"
 #file_path = Path("IMG_2697.mp4").absolute()
 #webbrowser.open(file_path.as_uri())
 
+def create_movie_card(parent, image, title, command,bgcolor =main_color):
+    CARD_W = 180
+    CARD_H = 260
+    RADIUS = 18
+
+    card = tk.Canvas(
+        parent,
+        width=CARD_W,
+        height=CARD_H,
+        bg=main_color,
+        highlightthickness=0
+    )
+
+    # Shadow
+    draw_round_rect(
+        card,
+        8, 10, CARD_W-2, CARD_H-2,
+        r=RADIUS,
+        fill="#000000",
+        outline=""
+    )
+
+    # Card body
+    body = draw_round_rect(
+        card,
+        0, 0, CARD_W-10, CARD_H-10,
+        r=RADIUS,
+        fill=bgcolor,
+        outline=""
+    )
+
+    # Thumbnail
+    img_id = card.create_image(
+        (CARD_W-10)//2,
+        90,
+        image=image
+    )
+
+    # Title
+    text_id = card.create_text(
+        (CARD_W-10)//2,
+        215,
+        text=title,
+        fill="white",
+        font=("Segoe UI", 10, "bold"),
+        width=CARD_W-30
+    )
+
+    # Click
+    card.bind("<Button-1>", lambda e: command())
+
+    # Hover animation
+    def on_enter(e):
+        card.scale("all", CARD_W//2, CARD_H//2, 1.06, 1.06)
+        card.configure(cursor="hand2")
+
+    def on_leave(e):
+        card.scale("all", CARD_W//2, CARD_H//2, 1/1.06, 1/1.06)
+
+    card.bind("<Enter>", on_enter)
+    card.bind("<Leave>", on_leave)
+
+    return card
+
+def draw_round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
+    points = [
+        x1+r, y1,
+        x2-r, y1,
+        x2, y1,
+        x2, y1+r,
+        x2, y2-r,
+        x2, y2,
+        x2-r, y2,
+        x1+r, y2,
+        x1, y2,
+        x1, y2-r,
+        x1, y1+r,
+        x1, y1
+    ]
+    return canvas.create_polygon(points, smooth=True, **kwargs)
+
+def layout_cards(container, cards):
+    for w in container.winfo_children():
+        w.grid_forget()
+
+    CARD_W = 190
+    PADDING = 20
+
+    cols = max(container.winfo_width() // (CARD_W + PADDING), 1)
+
+    row = col = 0
+    for card in cards:
+        card.grid(
+            row=row,
+            column=col,
+            padx=PADDING,
+            pady=PADDING,
+            sticky="n"
+        )
+        col += 1
+        if col >= cols:
+            col = 0
+            row += 1
 
 def get_ffmpeg_path():
     # Try bundled ffmpeg (PyInstaller)
@@ -34,10 +142,9 @@ if filepath is not None and len(filepath) > 0:
     print("Using last selected path:", filepath)
 TRACKER_FILE = "watched_videos.txt"
 
-main_color = "#2C2C2C"       
-secondary_color = "#522546"  
-third_color = "#88304E"      
-accent_color = "#F7374F" 
+SELECTED_DIR = ""
+
+
 
 
 def mark_as_watched(name):
@@ -79,19 +186,17 @@ def open_file_browser():
 def create_movie_display(movie_display, dirpath):
     if not FFMPEG_PATH:
         raise RuntimeError("ffmpeg not found")
+
+    # Clear previous content
     for widget in movie_display.winfo_children():
         widget.destroy()
 
-    THUMB_W = 160
-    PADDING = 12
+    unique_dirs = rh.get_unique_filenames(dirpath)
+    print("Unique dirs:", unique_dirs)
 
-    cols = max(movie_display.winfo_width() // (THUMB_W + PADDING), 1)
+    cards = []
 
-    row = col = 0
-    unique_files = rh.get_unique_filenames(dirpath)
-    print("Unique files:", unique_files)
-
-    for name in unique_files:
+    for name in unique_dirs:
         matching_files = rh.get_matching_files(name, dirpath)
         if not matching_files:
             continue
@@ -99,108 +204,134 @@ def create_movie_display(movie_display, dirpath):
         first_file = Path(dirpath) / matching_files[0]
         thumbnail_path = Path("/tmp") / f"{first_file.stem}_thumb.jpg"
 
-        if not thumbnail_path.exists():  
+        # Generate thumbnail if needed
+        if not thumbnail_path.exists():
             try:
-                subprocess.run([
-                    FFMPEG_PATH,
-                    "-y",  # overwrite
-                    "-i", str(first_file),
-                    "-ss", "00:00:01",  # seek 1 second into the video
-                    "-vframes", "1",
-                    "-vf", "scale=120:-1",  # width 120, keep aspect ratio
-                    str(thumbnail_path)
-                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    [
+                        FFMPEG_PATH,
+                        "-y",
+                        "-i", str(first_file),
+                        "-ss", "00:01:01",
+                        "-vframes", "1",
+                        "-vf", "scale=320:-1",
+                        str(thumbnail_path)
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
             except Exception as e:
-                print(f"Failed to create thumbnail for {first_file}: {e}")
-                img = Image.new("RGB", (120, 80), color="gray")
-                photo = ImageTk.PhotoImage(img)
+                print(f"Thumbnail failed for {first_file}: {e}")
+                img = Image.new("RGB", (320, 180), "gray")
         else:
             img = Image.open(thumbnail_path)
-            photo = ImageTk.PhotoImage(img)
 
-        if 'photo' not in locals():
-            img = Image.open(thumbnail_path)
-            photo = ImageTk.PhotoImage(img)
+        # Resize for card
+        img = img.resize((160, 90), Image.LANCZOS)
+        photo = ImageTk.PhotoImage(img)
 
-        btn_color = secondary_color
-        btn = tk.Button(movie_display, image=photo,bg=btn_color,highlightthickness=0,borderwidth=0, text=name, compound="top", command=partial(display_selected_series,name,movie_display,filepath))
-        btn.image = photo  
-        btn.grid(
-            row=row,
-            column=col,
-            padx=PADDING,
-            pady=PADDING,
-            sticky="n"
+        # Netflix-style card
+        card = create_movie_card(
+            movie_display,
+            image=photo,
+            title=name,
+            command=lambda n=name: display_selected_series(
+                n, movie_display, dirpath
+            ),
+            bgcolor=third_color
         )
 
-        col += 1
-        if col >= cols:
-            col = 0
-            row += 1
+        # Prevent GC
+        card.image = photo
+        cards.append(card)
+
+    # Initial layout
+    layout_cards(movie_display, cards)
+
+    # Reflow on resize
+    movie_display.bind(
+        "<Configure>",
+        lambda e: layout_cards(movie_display, cards)
+    )
 
 def display_selected_series(name, movie_display, dirpath):
     if not FFMPEG_PATH:
         raise RuntimeError("ffmpeg not found")
+
+    # Clear previous content
     for widget in movie_display.winfo_children():
         widget.destroy()
 
-    THUMB_W = 160
-    PADDING = 12
-
-    cols = max(movie_display.winfo_width() // (THUMB_W + PADDING), 1)
-
-    row = col = 0
     matching_files = rh.get_matching_files(name, dirpath)
     print("Matching files:", matching_files)
+
+    cards = []
 
     for file in matching_files:
         file_path = Path(dirpath) / file
         thumbnail_path = Path("/tmp") / f"{file_path.stem}_thumb.jpg"
 
+        # Generate thumbnail
         if not thumbnail_path.exists():
             try:
-                subprocess.run([
-                    FFMPEG_PATH,
-                    "-y",
-                    "-i", str(file_path),
-                    "-ss", "00:00:01",
-                    "-vframes", "1",
-                    "-vf", "scale=120:-1",
-                    str(thumbnail_path)
-                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    [
+                        FFMPEG_PATH,
+                        "-y",
+                        "-i", str(file_path),
+                        "-ss", "00:01:01",
+                        "-vframes", "1",
+                        "-vf", "scale=320:-1",
+                        str(thumbnail_path)
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
             except Exception as e:
-                print(f"Failed to create thumbnail for {file_path}: {e}")
-                img = Image.new("RGB", (120, 80), color="gray")
-                photo = ImageTk.PhotoImage(img)
+                print(f"Thumbnail failed for {file_path}: {e}")
+                img = Image.new("RGB", (320, 180), "gray")
         else:
             img = Image.open(thumbnail_path)
-            photo = ImageTk.PhotoImage(img)
 
-        if 'photo' not in locals():
-            img = Image.open(thumbnail_path)
-            photo = ImageTk.PhotoImage(img)
+        # Resize for card
+        img = img.resize((160, 90), Image.LANCZOS)
+        photo = ImageTk.PhotoImage(img)
 
-        btn_color = accent_color if is_watched(file_path.name) else secondary_color
-        btn = tk.Button(movie_display,borderwidth=0,highlightthickness=0,activebackground=main_color, image=photo,bg=btn_color, text=file_path.name, compound="top",command=partial(play_selected,file_path.name,dirpath))
-        btn.image = photo  # prevent garbage collection
-        btn.grid(
-            row=row,
-            column=col,
-            padx=PADDING,
-            pady=PADDING,
-            sticky="n"
+        watched = is_watched(file_path.name)
+        bgcolor =third_color
+        if watched:
+            bgcolor = accent_color
+
+        
+        # Episode card
+        card = create_movie_card(
+            movie_display,
+            image=photo,
+            title=file_path.name,
+            command=lambda f=file_path.name: play_selected(f, dirpath,name),
+           bgcolor= bgcolor
         )
 
-        col += 1
-        if col >= cols:
-            col = 0
-            row += 1
+        card.image = photo
+        cards.append(card)
 
-def play_selected(name, dirpath):
+    # Initial layout
+    layout_cards(movie_display, cards)
+
+    # Reflow on resize
+    movie_display.bind(
+        "<Configure>",
+        lambda e: layout_cards(movie_display, cards)
+    )
+
+def play_selected(name, dirpath,dirname):
     """
     Opens the selected video file in the default browser/media player.
     """
-    file_path = Path(dirpath) / name  
+    print(SELECTED_DIR)
+    file_path = Path(dirpath) /dirname/ name  
     if not file_path.exists():
         print(f"File not found: {file_path}")
         return
@@ -217,29 +348,58 @@ window.configure(bg=main_color)
 # ===== CONTROL PANEL =====
 control_panel = tk.Frame(window, bg=main_color, height=60)
 control_panel.pack(fill="x", side="top")
-control_panel.pack_propagate(False)  # prevent resizing to children
+control_panel.pack_propagate(False)  
 
 # Button style
-def create_styled_button(parent, text, command=None):
-    btn = tk.Button(
+def create_styled_button(parent, text, command=None, width=160, height=40):
+    canvas = tk.Canvas(
         parent,
-        text=text,
-        command=command,
-        bg=secondary_color,
-        fg="white",
-        activebackground=third_color,
-        activeforeground="white",
-        relief="flat",
-        borderwidth=0,
-        padx=20,
-        pady=8,
-        font=("Segoe UI", 10, "bold"),
-        cursor="hand2"
+        width=width,
+        height=height,
+        bg=parent["bg"],
+        highlightthickness=0
     )
-    # Hover effect
-    btn.bind("<Enter>", lambda e: btn.config(bg=third_color))
-    btn.bind("<Leave>", lambda e: btn.config(bg=secondary_color))
-    return btn
+
+    radius = height // 2  # pill shape
+
+    bg_normal = third_color
+    bg_hover = main_color
+
+    rect =draw_round_rect(
+        canvas,
+        2, 2, width-2, height-2,
+        radius,
+        fill=bg_normal,
+        outline=""
+    )
+
+    label = canvas.create_text(
+        width // 2,
+        height // 2,
+        text=text,
+        fill="white",
+        font=("Segoe UI", 10, "bold")
+    )
+
+    # Hover effects
+    def on_enter(_):
+        canvas.itemconfig(rect, fill=bg_hover)
+
+    def on_leave(_):
+        canvas.itemconfig(rect, fill=bg_normal)
+
+    # Click
+    def on_click(_):
+        if command:
+            command()
+
+    canvas.bind("<Enter>", on_enter)
+    canvas.bind("<Leave>", on_leave)
+    canvas.bind("<Button-1>", on_click)
+
+    canvas.configure(cursor="hand2")
+
+    return canvas
 
 # "Choose File" button
 choose_file_btn = create_styled_button(control_panel, "Alege Fisier", command=open_file_browser)
@@ -286,6 +446,15 @@ canvas_window = canvas.create_window(
     anchor="nw"
 )
 
+def on_key_press(event):
+    if event.keysym == "Up":
+        canvas.yview_scroll(-1, "units")   # scroll up
+    elif event.keysym == "Down":
+        canvas.yview_scroll(1, "units")    # scroll down
+
+# Bind to the main window
+window.bind("<Up>", on_key_press)
+window.bind("<Down>", on_key_press)
 
 def on_frame_configure(event):
     canvas.configure(scrollregion=canvas.bbox("all"))
@@ -306,4 +475,13 @@ if filepath is not None and len(filepath) > 0:
 return_btn = create_styled_button(control_panel,text="<-",command=partial(create_movie_display,movie_display,filepath))
 return_btn.pack(side="right")
 
+
+movie_display.bind(
+    "<Configure>",
+    lambda e: layout_cards(movie_display, movie_display.winfo_children())
+)
+
+window.bind("<MouseWheel>", lambda e: canvas.yview_scroll(-int(e.delta/120), "units"))
 window.mainloop()
+
+
