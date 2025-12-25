@@ -8,6 +8,7 @@ from functools import partial
 from tkinter import filedialog
 import shutil
 import sys
+import random
 
 main_color      = "#141414"
 secondary_color = "#141414"
@@ -16,6 +17,58 @@ accent_color    = "#E50914"
 fg = "#E5E5E5"
 #file_path = Path("IMG_2697.mp4").absolute()
 #webbrowser.open(file_path.as_uri())
+def get_folder_icon(folder_path, width=120, height=80):
+    """
+    Returns a PhotoImage for a folder:
+    - if exactly one PNG exists in the folder, use it
+    - otherwise, generate a colored rectangle
+    """
+    folder_path = Path(folder_path)
+    if not folder_path.is_dir():
+        raise ValueError(f"{folder_path} is not a directory")
+
+    # collect all PNG files
+    png_files = list(folder_path.glob("*.png"))
+
+    if len(png_files) == 1:
+        img = Image.open(png_files[0])
+        img.thumbnail((width, height))
+    else:
+        # None or multiple → random color placeholder
+        color = "#" + "".join(random.choices("0123456789ABCDEF", k=6))
+        img = Image.new("RGB", (width, height), color=color)
+
+    return ImageTk.PhotoImage(img)
+
+def get_video_icon(file_path, folder_icons):
+    """
+    Determine the icon for a video file.
+    folder_icons: list of Path objects (png files in folder)
+    """
+    file_stem = file_path.stem
+
+    if not folder_icons:
+        # No png files → random color placeholder
+        color = "#" + "".join(random.choices("0123456789ABCDEF", k=6))
+        img = Image.new("RGB", (160, 90), color=color)
+        return ImageTk.PhotoImage(img)
+
+    if len(folder_icons) == 1:
+        img = Image.open(folder_icons[0])
+        img.thumbnail((160, 90))
+        return ImageTk.PhotoImage(img)
+
+    # Multiple pngs → try to find one with same name
+    for icon_file in folder_icons:
+        if icon_file.stem.lower() == file_stem.lower():
+            img = Image.open(icon_file)
+            img.thumbnail((160, 90))
+            return ImageTk.PhotoImage(img)
+
+    # fallback → first icon
+    img = Image.open(folder_icons[0])
+    img.thumbnail((160, 90))
+    return ImageTk.PhotoImage(img)
 
 def create_movie_card(parent, image, title, command,bgcolor =main_color):
     CARD_W = 180
@@ -184,10 +237,6 @@ def open_file_browser():
         return None
 
 def create_movie_display(movie_display, dirpath):
-    if not FFMPEG_PATH:
-        raise RuntimeError("ffmpeg not found")
-
-    # Clear previous content
     for widget in movie_display.winfo_children():
         widget.destroy()
 
@@ -197,39 +246,11 @@ def create_movie_display(movie_display, dirpath):
     cards = []
 
     for name in unique_dirs:
-        matching_files = rh.get_matching_files(name, dirpath)
-        if not matching_files:
+        folder_path = Path(dirpath) / name
+        if not folder_path.exists() or not folder_path.is_dir():
             continue
 
-        first_file = Path(dirpath) / matching_files[0]
-        thumbnail_path = Path("/tmp") / f"{first_file.stem}_thumb.jpg"
-
-        # Generate thumbnail if needed
-        if not thumbnail_path.exists():
-            try:
-                subprocess.run(
-                    [
-                        FFMPEG_PATH,
-                        "-y",
-                        "-i", str(first_file),
-                        "-ss", "00:01:01",
-                        "-vframes", "1",
-                        "-vf", "scale=320:-1",
-                        str(thumbnail_path)
-                    ],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-            except Exception as e:
-                print(f"Thumbnail failed for {first_file}: {e}")
-                img = Image.new("RGB", (320, 180), "gray")
-        else:
-            img = Image.open(thumbnail_path)
-
-        # Resize for card
-        img = img.resize((160, 90), Image.LANCZOS)
-        photo = ImageTk.PhotoImage(img)
+        photo = get_folder_icon(folder_path, width=160, height=90)
 
         # Netflix-style card
         card = create_movie_card(
@@ -241,12 +262,10 @@ def create_movie_display(movie_display, dirpath):
             ),
             bgcolor=third_color
         )
-
-        # Prevent GC
-        card.image = photo
+        card.image = photo  # prevent GC
         cards.append(card)
 
-    # Initial layout
+    # Layout cards in grid
     layout_cards(movie_display, cards)
 
     # Reflow on resize
@@ -256,62 +275,36 @@ def create_movie_display(movie_display, dirpath):
     )
 
 def display_selected_series(name, movie_display, dirpath):
-    if not FFMPEG_PATH:
-        raise RuntimeError("ffmpeg not found")
-
     # Clear previous content
     for widget in movie_display.winfo_children():
         widget.destroy()
 
+    folder_path = Path(dirpath) / name
+    if not folder_path.exists() or not folder_path.is_dir():
+        return
+
     matching_files = rh.get_matching_files(name, dirpath)
     print("Matching files:", matching_files)
+
+    # Collect all png files in folder
+    folder_icons = list(folder_path.glob("*.png"))
 
     cards = []
 
     for file in matching_files:
         file_path = Path(dirpath) / file
-        thumbnail_path = Path("/tmp") / f"{file_path.stem}_thumb.jpg"
-
-        # Generate thumbnail
-        if not thumbnail_path.exists():
-            try:
-                subprocess.run(
-                    [
-                        FFMPEG_PATH,
-                        "-y",
-                        "-i", str(file_path),
-                        "-ss", "00:01:01",
-                        "-vframes", "1",
-                        "-vf", "scale=320:-1",
-                        str(thumbnail_path)
-                    ],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-            except Exception as e:
-                print(f"Thumbnail failed for {file_path}: {e}")
-                img = Image.new("RGB", (320, 180), "gray")
-        else:
-            img = Image.open(thumbnail_path)
-
-        # Resize for card
-        img = img.resize((160, 90), Image.LANCZOS)
-        photo = ImageTk.PhotoImage(img)
+        photo = get_video_icon(file_path, folder_icons)
 
         watched = is_watched(file_path.name)
-        bgcolor =third_color
-        if watched:
-            bgcolor = accent_color
+        bgcolor = accent_color if watched else third_color
 
-        
         # Episode card
         card = create_movie_card(
             movie_display,
             image=photo,
             title=file_path.name,
-            command=lambda f=file_path.name: play_selected(f, dirpath,name),
-           bgcolor= bgcolor
+            command=lambda f=file_path.name: play_selected(f, dirpath, name),
+            bgcolor=bgcolor
         )
 
         card.image = photo
