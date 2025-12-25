@@ -38,7 +38,7 @@ jobs:
           pyinstaller \
             --onefile \
             --hidden-import=PIL._tkinter_finder \
-            gui.py
+            mwatcher.py
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
