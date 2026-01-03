@@ -315,7 +315,7 @@ def display_selected_series(name, movie_display, dirpath, control_panel):
                 movie_display,
                 image=photo,
                 title=file_path.name,
-                command=lambda f=file_path.name: play_selected(f, dirpath, name),
+                command=lambda f=file_path.name: play_selected(f,season_path, name),
                 bgcolor=bgcolor
             )
             card.image = photo
@@ -347,7 +347,7 @@ def play_selected(name, dirpath,dirname):
     Opens the selected video file in the default browser/media player.
     """
     print(SELECTED_DIR)
-    file_path = Path(dirpath) /dirname/ name  
+    file_path = Path(dirpath) / name  
     if not file_path.exists():
         print(f"File not found: {file_path}")
         return
