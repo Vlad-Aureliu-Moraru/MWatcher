@@ -1,5 +1,6 @@
 import webbrowser
 import tkinter as tk
+from tkinter import ttk
 from pathlib import Path
 from PIL import Image, ImageTk
 import subprocess
@@ -17,6 +18,7 @@ accent_color    = "#E50914"
 fg = "#E5E5E5"
 #file_path = Path("IMG_2697.mp4").absolute()
 #webbrowser.open(file_path.as_uri())
+
 def get_folder_icon(folder_path, width=120, height=80):
     """
     Returns a PhotoImage for a folder:
@@ -133,7 +135,6 @@ def create_movie_card(parent, image, title, command,bgcolor =main_color):
     card.bind("<Leave>", on_leave)
 
     return card
-
 def draw_round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
     points = [
         x1+r, y1,
@@ -150,7 +151,6 @@ def draw_round_rect(canvas, x1, y1, x2, y2, r, **kwargs):
         x1, y1
     ]
     return canvas.create_polygon(points, smooth=True, **kwargs)
-
 def layout_cards(container, cards):
     for w in container.winfo_children():
         w.grid_forget()
@@ -174,21 +174,6 @@ def layout_cards(container, cards):
             col = 0
             row += 1
 
-def get_ffmpeg_path():
-    # Try bundled ffmpeg (PyInstaller)
-    if getattr(sys, 'frozen', False):
-        bundled = Path(sys._MEIPASS) / "ffmpeg"
-        if bundled.exists():
-            return str(bundled)
-
-    # Try system ffmpeg
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg:
-        return ffmpeg
-
-    return None
-
-FFMPEG_PATH = get_ffmpeg_path()
 
 filepath = rh.get_last_selected_path()
 if filepath is not None and len(filepath) > 0:
@@ -196,9 +181,6 @@ if filepath is not None and len(filepath) > 0:
 TRACKER_FILE = "watched_videos.txt"
 
 SELECTED_DIR = ""
-
-
-
 
 def mark_as_watched(name):
     tracker = Path(TRACKER_FILE)
@@ -210,7 +192,6 @@ def mark_as_watched(name):
         with tracker.open("a") as f:
             f.write(name + "\n")
         print(f"Marked as watched: {name}")
-
 def is_watched(name):
     """
     Returns True if the video has already been watched.
@@ -235,12 +216,15 @@ def open_file_browser():
     else:
         print("No folder selected")
         return None
-
 def create_movie_display(movie_display, dirpath):
     for widget in movie_display.winfo_children():
         widget.destroy()
 
-    unique_dirs = rh.get_unique_filenames(dirpath)
+    for widget in control_panel.winfo_children():
+        if isinstance(widget, ttk.Combobox):
+            widget.destroy()
+
+    unique_dirs = rh.get_seasons(dirpath)
     print("Unique dirs:", unique_dirs)
 
     cards = []
@@ -258,7 +242,7 @@ def create_movie_display(movie_display, dirpath):
             image=photo,
             title=name,
             command=lambda n=name: display_selected_series(
-                n, movie_display, dirpath
+                n, movie_display, dirpath,control_panel
             ),
             bgcolor=third_color
         )
@@ -273,51 +257,90 @@ def create_movie_display(movie_display, dirpath):
         "<Configure>",
         lambda e: layout_cards(movie_display, cards)
     )
-
-def display_selected_series(name, movie_display, dirpath):
-    # Clear previous content
+def display_selected_series(name, movie_display, dirpath, control_panel):
+    """
+    Displays episodes of a selected series with a season combobox.
+    - name: series name
+    - movie_display: frame where episode cards will be displayed
+    - dirpath: path to the repository
+    - control_panel: frame where the combobox will be added
+    """
+    # Clear previous episode cards
     for widget in movie_display.winfo_children():
         widget.destroy()
 
-    folder_path = Path(dirpath) / name
-    if not folder_path.exists() or not folder_path.is_dir():
+    # Clear previous combobox in control panel
+    for widget in control_panel.winfo_children():
+        if isinstance(widget, ttk.Combobox):
+            widget.destroy()
+
+    series_path = Path(dirpath) / name
+    if not series_path.exists() or not series_path.is_dir():
         return
 
-    matching_files = rh.get_matching_files(name, dirpath)
-    print("Matching files:", matching_files)
+    # Get all seasons
+    seasons = rh.get_seasons(series_path)
+    if not seasons:
+        return
 
-    # Collect all png files in folder
-    folder_icons = list(folder_path.glob("*.png"))
+    # Default season is the first one
+    selected_season = tk.StringVar(value=seasons[0])
 
-    cards = []
+    def update_cards(*args):
+        """
+        Updates episode cards whenever a new season is selected
+        """
+        season_path = series_path / selected_season.get()
+        if not season_path.exists() or not season_path.is_dir():
+            return
 
-    for file in matching_files:
-        file_path = Path(dirpath) / file
-        photo = get_video_icon(file_path, folder_icons)
+        files = rh.get_files(season_path)
 
-        watched = is_watched(file_path.name)
-        bgcolor = accent_color if watched else third_color
+        # Collect all png files in series folder (for icons)
+        folder_icons = list(series_path.glob("*.png"))
 
-        # Episode card
-        card = create_movie_card(
-            movie_display,
-            image=photo,
-            title=file_path.name,
-            command=lambda f=file_path.name: play_selected(f, dirpath, name),
-            bgcolor=bgcolor
+        # Clear current cards
+        for widget in movie_display.winfo_children():
+            widget.destroy()
+
+        cards = []
+        for file in files:
+            file_path = season_path / file
+            photo = get_video_icon(file_path, folder_icons)  # your existing function
+
+            watched = is_watched(file_path.name)
+            bgcolor = accent_color if watched else third_color
+
+            card = create_movie_card(
+                movie_display,
+                image=photo,
+                title=file_path.name,
+                command=lambda f=file_path.name: play_selected(f, dirpath, name),
+                bgcolor=bgcolor
+            )
+            card.image = photo
+            cards.append(card)
+
+        layout_cards(movie_display, cards)
+        movie_display.bind(
+            "<Configure>",
+            lambda e: layout_cards(movie_display, cards)
         )
 
-        card.image = photo
-        cards.append(card)
-
-    # Initial layout
-    layout_cards(movie_display, cards)
-
-    # Reflow on resize
-    movie_display.bind(
-        "<Configure>",
-        lambda e: layout_cards(movie_display, cards)
+    # Create the combobox in control panel
+    season_combo = ttk.Combobox(
+        control_panel,
+        textvariable=selected_season,
+        values=seasons,
+        state="readonly",
+        width=15,
+        font=("Segoe UI", 10)
     )
+    season_combo.pack(side="left", padx=10, pady=10)
+    selected_season.trace("w", update_cards)  # update cards when selection changes
+
+    # Initialize cards for the first season
+    update_cards()
 
 def play_selected(name, dirpath,dirname):
     """
